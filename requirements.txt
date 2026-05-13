@@ -1,0 +1,19 @@
+# =============================================================================
+# NYTimes News Scraper — Dependências Python
+# =============================================================================
+
+# Configuração e validação de dados
+pydantic>=2.0.0
+pyyaml>=6.0
+
+# Automação web com Playwright (browser Chromium)
+playwright>=1.43.0
+
+# Manipulação de datas avançada (relativedelta)
+python-dateutil>=2.9.0
+
+# Geração de arquivos Excel com formatação
+openpyxl>=3.1.2
+
+# Download de imagens com retry automático
+requests>=2.31.0

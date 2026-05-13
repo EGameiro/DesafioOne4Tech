@@ -1,0 +1,50 @@
+# =============================================================================
+# docker-compose.yml — NYTimes News Scraper
+# =============================================================================
+#
+# Pré-requisitos:
+#   - Docker Desktop com WSL2 habilitado, ou Docker Engine no Ubuntu/WSL2
+#   - Editar config/config.yaml antes de executar
+#
+# Uso rápido:
+#   docker compose up --build        # 1ª execução (faz build da imagem)
+#   docker compose up                # Execuções seguintes (sem rebuild)
+#   docker compose run --rm scraper python validate.py   # Roda testes
+#
+# Após execução, os resultados estarão em:
+#   ./output/news_results.xlsx
+#   ./output/images/
+#   ./logs/scraper.log
+# =============================================================================
+
+version: "3.9"
+
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nytimes-scraper:latest
+    container_name: nytimes-scraper
+
+    volumes:
+      # Resultados persistem no host após o container ser removido
+      - ./output:/app/output
+      - ./logs:/app/logs
+      # Config montada como volume — edite sem precisar rebuild
+      - ./config/config.yaml:/app/config/config.yaml:ro
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+    # Container é removido automaticamente após execução bem-sucedida
+    # Remova ou comente para manter o container após a execução (debug)
+    restart: "no"
+
+    # Limites de recursos (opcional — ajuste conforme sua máquina)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 2g
+    #       cpus: "1.0"

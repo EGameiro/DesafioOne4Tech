@@ -1,0 +1,59 @@
+# =============================================================================
+# NYTimes News Scraper - Configuração Principal
+# =============================================================================
+#
+# Instruções:
+#   - search_phrase : Termo de busca a ser pesquisado no NYTimes
+#   - categories    : Lista de categorias/seções (deixe vazio [] para sem filtro)
+#   - months        : Período de busca em meses
+#                     0 ou 1 = apenas o mês atual
+#                     2      = mês atual + mês anterior
+#                     3      = mês atual + 2 meses anteriores
+#                     e assim por diante...
+# =============================================================================
+
+scraper:
+  search_phrase: "artificial intelligence"
+
+  # Exemplos de categorias válidas do NYTimes:
+  # "Technology", "Business", "Science", "Health", "Sports",
+  # "Arts", "World", "U.S.", "Politics", "Opinion"
+  # Deixe como lista vazia [] para não aplicar filtro de categoria
+  categories:
+    - "Technology"
+    # - "Science"   # descomente para adicionar mais categorias
+
+  months: 2
+
+# =============================================================================
+# Configurações de Output
+# =============================================================================
+output:
+  excel_filename: "nytimes_news.xlsx"
+  images_folder: "output/images"
+  excel_folder: "output"
+
+# =============================================================================
+# Configurações de Browser / Playwright
+# =============================================================================
+browser:
+  headless: true
+  timeout_ms: 30000         # Timeout padrão para operações (ms)
+  slow_mo_ms: 100           # Delay entre ações para simular comportamento humano (ms)
+  viewport_width: 1366
+  viewport_height: 768
+
+# =============================================================================
+# Configurações do REFramework
+# =============================================================================
+framework:
+  max_retries: 3            # Número máximo de tentativas por transação
+  retry_delay_seconds: 5    # Aguarda N segundos antes de tentar novamente
+  log_level: "INFO"         # DEBUG | INFO | WARNING | ERROR
+
+# =============================================================================
+# URLs
+# =============================================================================
+urls:
+  base_url: "https://www.nytimes.com"
+  search_url: "https://www.nytimes.com/search"

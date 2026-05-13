@@ -1,0 +1,46 @@
+# =============================================================================
+# .gitignore — NYTimes News Scraper
+# =============================================================================
+
+# Output gerado pelo scraper (não versionar resultados)
+output/
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Docker
+*.env.local
+
+# Playwright
+playwright-report/
+test-results/
