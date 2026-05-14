@@ -7,8 +7,8 @@
 #   - Editar config/config.yaml antes de executar
 #
 # Uso rápido:
-#   docker compose up --build        # 1ª execução (faz build da imagem)
-#   docker compose up                # Execuções seguintes (sem rebuild)
+#   docker compose up                # Baixa a imagem do GHCR e executa
+#   docker compose up --build        # Faz build local em vez de usar o GHCR
 #   docker compose run --rm scraper python validate.py   # Roda testes
 #
 # Após execução, os resultados estarão em:
@@ -21,10 +21,7 @@ version: "3.9"
 
 services:
   scraper:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: nytimes-scraper:latest
+    image: ghcr.io/egameiro/desafioone4tech:latest
     container_name: nytimes-scraper
 
     volumes:
