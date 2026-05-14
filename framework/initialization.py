@@ -102,7 +102,27 @@ class InitializationState:
         return logging.getLogger("nytimes_scraper")
 
     def _create_output_folders(self, config: AppConfig, logger: logging.Logger) -> None:
-        for folder in [Path(config.output.excel_folder), Path(config.output.images_folder)]:
+        images_folder = Path(config.output.images_folder)
+        excel_folder  = Path(config.output.excel_folder)
+        excel_file    = excel_folder / config.output.excel_filename
+
+        # Limpa imagens da execucao anterior
+        if images_folder.exists():
+            removed = 0
+            for f in images_folder.iterdir():
+                if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+                    f.unlink()
+                    removed += 1
+            if removed:
+                logger.info(f"Limpeza: {removed} imagem(ns) removida(s) de '{images_folder}'")
+
+        # Remove Excel anterior
+        if excel_file.exists():
+            excel_file.unlink()
+            logger.info(f"Limpeza: arquivo '{excel_file.name}' removido.")
+
+        # Garante que as pastas existem
+        for folder in [excel_folder, images_folder]:
             folder.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Pasta garantida: {folder}")
 
@@ -143,22 +163,59 @@ class InitializationState:
             },
         )
 
-        anti_detection_script = (
-            "Object.defineProperty(navigator, 'webdriver', {"
-            "get: () => undefined"
-            "});"
-            "Object.defineProperty(navigator, 'plugins', {"
-            "get: () => [1, 2, 3, 4, 5]"
-            "});"
-            "Object.defineProperty(navigator, 'languages', {"
-            "get: () => ['en-US', 'en']"
-            "});"
-            "window.chrome = { runtime: {} };"
-        )
+        anti_detection_script = """
+            // Remove webdriver flag
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+
+            // Plugins realistas
+            Object.defineProperty(navigator, 'plugins', {get: () => [
+                {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format'},
+                {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: ''},
+                {name: 'Native Client', filename: 'internal-nacl-plugin', description: ''}
+            ]});
+
+            // Idioma e plataforma realistas
+            Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+            Object.defineProperty(navigator, 'platform',  {get: () => 'Win32'});
+
+            // Objeto chrome completo
+            window.chrome = {
+                runtime: {},
+                loadTimes: function() {},
+                csi: function() {},
+                app: {isInstalled: false}
+            };
+
+            // Permissions API — evita deteccao por consulta de notificacoes
+            const _origPermQuery = window.navigator.permissions.query.bind(navigator.permissions);
+            window.navigator.permissions.query = (p) =>
+                p.name === 'notifications'
+                    ? Promise.resolve({state: Notification.permission})
+                    : _origPermQuery(p);
+
+            // WebGL — relata hardware real
+            const _origGetParam = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(p) {
+                if (p === 37445) return 'Intel Inc.';
+                if (p === 37446) return 'Intel Iris OpenGL Engine';
+                return _origGetParam.apply(this, [p]);
+            };
+
+            // Dimensoes de janela
+            if (!window.outerWidth)  window.outerWidth  = window.innerWidth;
+            if (!window.outerHeight) window.outerHeight = window.innerHeight;
+
+            // Remove propriedades que delatam automacao
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+        """
         context.add_init_script(anti_detection_script)
 
         page = context.new_page()
         page.set_default_timeout(config.browser.timeout_ms)
+
+        logger.info("Stealth mode aplicado (anti-deteccao via JS).")
 
         logger.info("Browser e pagina inicializados com sucesso.")
         return playwright, browser, page

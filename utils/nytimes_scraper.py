@@ -46,30 +46,36 @@ MAX_ARTICLES = 500    # teto absoluto de artigos por execucao
 # ---------------------------------------------------------------------------
 SELECTORS = {
     "results_list": [
-        "ol[data-testid='search-results']",
+        "div[data-testid='search-results']",   # estrutura atual (2025+)
+        "ol[data-testid='search-results']",    # fallback estrutura antiga
         "ol.css-1l4spti",
     ],
     "article_item": [
-        "li[data-testid='search-bodega-result']",
-        "ol[data-testid='search-results'] > li",
+        "div[data-testid='search-bodega-result']",  # estrutura atual (div)
+        "li[data-testid='search-bodega-result']",   # fallback estrutura antiga (li)
     ],
     "title": [
-        "h4",
+        "div[data-tpl='h'] a",             # estrutura atual
+        "h4",                               # fallback estrutura antiga
         "a h4",
         "[data-testid='topper-headline']",
     ],
     "link": [
+        "div[data-tpl='h'] a",             # estrutura atual (titulo e link juntos)
         "a[href^='/']",
         "a[href^='https://www.nytimes.com']",
     ],
     "date": [
+        "span[data-testid='todays-date']",  # estrutura atual
+        "div[data-tpl='la'] span",          # fallback por data-tpl
         "span[data-testid='topper-timestamp']",
         "time[datetime]",
         "span[class*='date']",
         "time",
     ],
     "description": [
-        "p[class*='summary']",
+        "div[data-tpl='bo']",              # estrutura atual
+        "p[class*='summary']",             # fallback estrutura antiga
         "p[data-testid*='summary']",
         ".css-16nhkrn",
     ],
@@ -80,18 +86,24 @@ SELECTORS = {
         "img[src*='static01']",
     ],
     "show_more": [
-        "button[data-testid='search-show-more-button']",
+        "button[data-testid='search-show-more-button']",  # igual nos dois layouts
         "button:has-text('Show More')",
         "button:has-text('Load More')",
     ],
     "cookie_accept": [
+        "#fides-banner .fides-accept-all-button",      # Fides: classe do botao accept
+        "#fides-banner button.fides-btn-primary",       # Fides: botao primario
+        "#fides-overlay button:has-text('Accept all')", # Fides: por texto
+        "#fides-overlay button:has-text('Reject all')", # Fides: rejeitar tambem fecha
         "button[data-testid='Accept all-btn']",
         "button:has-text('Accept all')",
         "button:has-text('Accept')",
         "#complianceOverlay button[class*='accept']",
     ],
     "section_filter_btn": [
-        "button[data-testid='search-multiselect-button']",
+        "button#search-sections",                          # estrutura atual (por id)
+        "button[aria-label='Section']",                    # fallback por aria-label
+        "button[data-testid='search-multiselect-button']", # fallback estrutura antiga
         "button[class*='css-'][aria-label*='ection']",
     ],
     "no_results": [
@@ -137,6 +149,9 @@ class NYTimesScraper:
         try:
             self._navigate_to_search(start_date, end_date)
             self._dismiss_cookie_banner()
+            self._dismiss_any_overlay()
+            self.page.wait_for_timeout(2000)
+            self._dismiss_any_overlay()   # segunda passagem — overlay pode reaparecer
 
             if self._is_empty_results():
                 logger.warning("Pagina de resultados retornou zero artigos.")
@@ -150,6 +165,7 @@ class NYTimesScraper:
 
             self._wait_for_results()
             articles = self._collect_all_articles(start_date, end_date)
+            articles = self._filter_by_relevance(articles)
 
         except (NoTransactionsFound, BrowserException):
             raise
@@ -168,22 +184,55 @@ class NYTimesScraper:
         logger.info(f"Total de artigos coletados: {len(articles)}")
         return articles
 
+    def _filter_by_relevance(self, articles: List[dict]) -> List[dict]:
+        """
+        Remove artigos onde a frase de busca nao aparece no titulo nem na descricao.
+        Isso evita coletar conteudo irrelevante retornado pelo algoritmo do NYTimes.
+        """
+        phrase = self.config.scraper.search_phrase.lower()
+        filtered = []
+        for article in articles:
+            title       = (article.get("title", "") or "").lower()
+            description = (article.get("description", "") or "").lower()
+            if phrase in title or phrase in description:
+                filtered.append(article)
+            else:
+                logger.debug(f"Artigo ignorado (frase ausente): {article.get('title', '')[:60]}")
+
+        removed = len(articles) - len(filtered)
+        if removed:
+            logger.info(f"Filtro de relevancia: {removed} artigos removidos, {len(filtered)} mantidos.")
+        return filtered
+
     # =========================================================================
     # Navegacao
     # =========================================================================
 
     def _navigate_to_search(self, start_date: date, end_date: date) -> None:
+        # Removido dropmab=false que interferia no algoritmo de busca
         params = {
-            "dropmab": "false",
-            "query":   self.config.scraper.search_phrase,
-            "sort":    "newest",
+            "query":     self.config.scraper.search_phrase,
+            "sort":      "newest",
             "startDate": start_date.strftime("%Y%m%d"),
             "endDate":   end_date.strftime("%Y%m%d"),
         }
         url = f"{self.SEARCH_URL}?{urlencode(params)}"
         logger.info(f"Navegando para: {url}")
         self.page.goto(url, wait_until="domcontentloaded", timeout=self.timeout)
-        self.page.wait_for_timeout(2000)
+        self.page.wait_for_timeout(3000)
+
+        # Aguarda rede estabilizar para garantir carregamento completo em headless
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass  # continua mesmo se timeout
+
+        # Salva screenshot de debug para inspecionar o que o headless esta vendo
+        try:
+            self.page.screenshot(path="output/debug_screenshot.png", full_page=False)
+            logger.info("Screenshot salvo em output/debug_screenshot.png")
+        except Exception:
+            pass
 
     # =========================================================================
     # Cookie banner
@@ -219,16 +268,65 @@ class NYTimesScraper:
     # Filtros de secao
     # =========================================================================
 
+    def _dismiss_any_overlay(self) -> None:
+        """Remove forcadamente qualquer overlay de cookies/privacidade via JavaScript."""
+        try:
+            self.page.evaluate("""
+                () => {
+                    // Remove overlay Fides e todos os seus elementos
+                    ['#fides-overlay', '#fides-banner', '.fides-modal-overlay',
+                     '.fides-overlay', '#complianceOverlay'].forEach(sel => {
+                        document.querySelectorAll(sel).forEach(el => el.remove());
+                    });
+                    // Restaura scroll do body caso esteja bloqueado
+                    document.body.style.overflow = '';
+                    document.body.style.pointerEvents = '';
+                }
+            """)
+            logger.debug("Overlays removidos via JavaScript.")
+        except Exception as e:
+            logger.debug(f"_dismiss_any_overlay: {e}")
+
     def _apply_section_filters(self, categories: List[str]) -> None:
         logger.info(f"Aplicando filtros de secao: {categories}")
 
-        section_btn = self._find_element(SELECTORS["section_filter_btn"])
+        # Aguarda o botao de filtro estar presente e visivel na pagina
+        section_btn = None
+        for selector in SELECTORS["section_filter_btn"]:
+            try:
+                self.page.wait_for_selector(selector, timeout=5000)
+                el = self.page.locator(selector).first
+                if el.is_visible(timeout=2000):
+                    section_btn = el
+                    break
+            except Exception:
+                continue
+
         if section_btn is None:
             logger.warning("Botao de filtro de secao nao encontrado. Pulando filtro.")
             return
 
-        section_btn.click()
-        self.page.wait_for_timeout(1000)
+        # Remove overlay ANTES de clicar no botao Section
+        self._dismiss_any_overlay()
+
+        # Clica via JavaScript para bypassar qualquer overlay remanescente
+        try:
+            self.page.evaluate("document.querySelector('button#search-sections')?.click()")
+        except Exception:
+            section_btn.click(force=True)
+
+        # Aguarda o dropdown abrir
+        try:
+            self.page.wait_for_selector(
+                "ul[data-testid='facet-filter-list']", timeout=5000
+            )
+            self.page.wait_for_timeout(500)
+        except Exception:
+            logger.warning("Dropdown de secao nao abriu. Pulando filtro.")
+            return
+
+        # Remove overlay novamente antes de interagir com as opcoes
+        self._dismiss_any_overlay()
 
         for category in categories:
             self._select_section_option(category)
@@ -240,17 +338,30 @@ class NYTimesScraper:
     def _select_section_option(self, category: str) -> None:
         category_lower = category.lower()
         try:
-            options = self.page.locator("ul[data-testid='multi-select-dropdown-list'] li")
+            # Estrutura atual: ul[data-testid='facet-filter-list'] > li[data-testid='facet-filter-option']
+            options = self.page.locator(
+                "ul[data-testid='facet-filter-list'] li[data-testid='facet-filter-option']"
+            )
             count = options.count()
             for i in range(count):
                 option = options.nth(i)
-                text = (option.text_content() or "").lower()
-                if category_lower in text:
-                    checkbox = option.locator("input[type='checkbox']").first
+                # Texto fica dentro do <span> dentro do <label>
+                text = (option.locator("span").first.text_content() or "").strip().lower()
+                if category_lower == text or category_lower in text:
+                    checkbox = option.locator("input[data-testid='facet-filter-checkbox']").first
                     if not checkbox.is_checked():
-                        option.click()
+                        # Clica via JS para bypassar overlay
+                        self._dismiss_any_overlay()
+                        try:
+                            self.page.evaluate(
+                                f"""document.querySelectorAll(
+                                    "li[data-testid='facet-filter-option']"
+                                )[{i}]?.click()"""
+                            )
+                        except Exception:
+                            option.click(force=True)
                         self.page.wait_for_timeout(500)
-                    logger.debug(f"Secao selecionada: '{category}'")
+                    logger.info(f"Secao selecionada: '{category}'")
                     return
             logger.warning(f"Secao '{category}' nao encontrada no dropdown.")
         except Exception as e:
@@ -356,22 +467,32 @@ class NYTimesScraper:
                 logger.debug("Artigo sem titulo - ignorado.")
                 return None
 
-            # URL do artigo
+            # URL do artigo — na estrutura atual o link e o proprio titulo
             href = ""
-            try:
-                link_el = item.locator(SELECTORS["link"][0]).first
-                href = link_el.get_attribute("href") or ""
-            except Exception:
-                pass
+            for link_sel in SELECTORS["link"]:
+                try:
+                    link_el = item.locator(link_sel).first
+                    href = link_el.get_attribute("href") or ""
+                    if href:
+                        break
+                except Exception:
+                    continue
             article_url = (
                 href if href.startswith("http")
                 else f"{self.BASE_URL}{href}" if href
                 else ""
             )
 
-            # Data
-            date_text = self._get_text(item, SELECTORS["date"])
-            # Tenta tambem o atributo datetime do elemento time
+            # Data — tenta aria-label primeiro (mais completo), depois texto
+            date_text = ""
+            try:
+                date_el = item.locator("span[data-testid='todays-date']").first
+                date_text = date_el.get_attribute("aria-label") or date_el.text_content() or ""
+            except Exception:
+                pass
+            if not date_text:
+                date_text = self._get_text(item, SELECTORS["date"]) or ""
+            # Fallback: atributo datetime do elemento time
             if not date_text:
                 try:
                     date_text = item.locator("time").first.get_attribute("datetime") or ""
@@ -485,10 +606,18 @@ class NYTimesScraper:
             except ValueError:
                 pass
 
-        # Textual: "May 13, 2024" / "May. 13, 2024"
+        # Textual com ano: "May 13, 2024" / "May. 13, 2024"
         for fmt in ["%B %d, %Y", "%b. %d, %Y", "%b %d, %Y"]:
             try:
                 return datetime.strptime(date_text, fmt).date()
+            except ValueError:
+                continue
+
+        # Textual sem ano: "May 13" — assume ano atual
+        for fmt in ["%B %d", "%b %d"]:
+            try:
+                parsed = datetime.strptime(date_text, fmt)
+                return parsed.replace(year=date.today().year).date()
             except ValueError:
                 continue
 

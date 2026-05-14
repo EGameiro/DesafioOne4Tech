@@ -23,8 +23,7 @@ scraper:
     - "Technology"
     # - "Science"   # descomente para adicionar mais categorias
 
-  months: 2
-
+  months: 1
 # =============================================================================
 # Configurações de Output
 # =============================================================================

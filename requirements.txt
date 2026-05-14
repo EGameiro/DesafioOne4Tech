@@ -17,3 +17,5 @@ openpyxl>=3.1.2
 
 # Download de imagens com retry automático
 requests>=2.31.0
+
+# Anti-deteccao implementada manualmente via JS em initialization.py

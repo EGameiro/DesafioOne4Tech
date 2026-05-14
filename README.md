@@ -13,6 +13,9 @@ Automação de extração de notícias do [New York Times](https://www.nytimes.c
 - Exportação em Excel formatado (`.xlsx`) com zebra striping e cabeçalho destacado
 - Arquitetura REFramework com retry automático e 3 tiers de exceção
 - Suporte a Docker + WSL2
+- **Filtro de relevância**: descarta automaticamente artigos que não contêm a frase de busca no título ou descrição
+- **Limpeza automática**: remove imagens e Excel da execução anterior ao iniciar
+- **Compatível com a estrutura HTML atual do NYTimes (2025+)**
 
 ---
 
@@ -88,6 +91,24 @@ framework:
   log_level: "INFO"
 ```
 
+### Seções disponíveis no NYTimes
+
+As seções aceitas no parâmetro `categories` são:
+
+| Seção | Seção |
+|-------|-------|
+| `Arts` | `Opinion` |
+| `Business` | `Podcasts` |
+| `Magazine` | `Science` |
+| `Style` | `Technology` |
+| `U.S.` | `World` |
+
+> **Nota:** Deixe `categories: []` para buscar em todas as seções sem filtro.
+
+### Filtro de relevância
+
+O scraper descarta automaticamente artigos onde a frase de busca não aparece no título nem na descrição. Isso evita coletar conteúdo irrelevante que o algoritmo do NYTimes possa retornar como fallback. Se nenhum artigo relevante for encontrado no período, nenhuma planilha é gerada.
+
 ### Parâmetro `months`
 
 | Valor | Período coletado |
@@ -101,38 +122,29 @@ framework:
 
 ## Execução via Docker (WSL2)
 
-### 1ª execução (faz build da imagem)
+> ⚠️ **Limitação conhecida:** O New York Times utiliza proteção anti-bot avançada (PerimeterX/HUMAN Security) que detecta e bloqueia browsers headless rodando em containers Docker. Isso ocorre porque o ambiente headless possui fingerprint diferente de um browser real (sem GPU, sem tela física, contexto limpo). **Recomenda-se a execução local** para garantir o funcionamento correto do scraper.
+>
+> O Docker funciona normalmente para rodar a suite de testes (`validate.py`), que não depende de browser.
 
-```bash
-# No terminal WSL2 ou Linux, dentro da pasta do projeto:
-docker compose up --build
-```
-
-### Execuções seguintes
-
-```bash
-docker compose up
-```
-
-### Rodar suite de validação dentro do container
+### Suite de validação via Docker (funciona normalmente)
 
 ```bash
 docker compose run --rm scraper python validate.py
 ```
 
-### Usar config diferente sem rebuild
+### Execução do scraper via Docker (sujeita a bloqueio do NYTimes)
 
 ```bash
-docker run --rm \
-  -v $(pwd)/output:/app/output \
-  -v $(pwd)/logs:/app/logs \
-  -v /caminho/para/minha_config.yaml:/app/config/config.yaml \
-  nytimes-scraper:latest
+# 1ª execução (build da imagem)
+docker compose up --build
+
+# Execuções seguintes
+docker compose up
 ```
 
 ---
 
-## Execução Local (sem Docker)
+## Execução Local (recomendado)
 
 ```bash
 # Instalar dependências
@@ -222,6 +234,23 @@ python validate.py
 ## Logs
 
 Os logs são gravados em `logs/scraper.log` e também exibidos no terminal. O nível padrão é `INFO`; mude para `DEBUG` em `config.yaml` para ver detalhes de cada artigo.
+
+---
+
+## Notas Técnicas
+
+### Compatibilidade com o NYTimes (2025+)
+
+O scraper foi atualizado para a estrutura HTML atual do NYTimes, que mudou em 2025:
+
+- Lista de resultados: `div[data-testid='search-results']` (antes era `ol`)
+- Itens: `div[data-testid='search-bodega-result']` (antes era `li`)
+- Título: `div[data-tpl='h'] a` (antes era `h4`)
+- Descrição: `div[data-tpl='bo']` (antes era `p[class*='summary']`)
+- Filtro de seção: `button#search-sections` (antes era `button[data-testid='search-multiselect-button']`)
+- Dropdown de seções: `ul[data-testid='facet-filter-list']`
+
+Todos os seletores possuem fallbacks para compatibilidade com versões anteriores do layout.
 
 ---
 
